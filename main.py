@@ -20,11 +20,11 @@ import json
 import random
 import string
 
-from keep_alive import keep_alive
-keep_alive()
+# from keep_alive import keep_alive
+# keep_alive()
 
-# from dotenv import load_dotenv
-# load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -40,7 +40,11 @@ ACCOUNT_URL = os.getenv('ACCOUNT_URL')
 MSG_DELETE_TIME = int(os.getenv('MSG_DELETE_TIME'))
 PAYMENT_URL = os.getenv('PAYMENT_URL')
 PAYMENT_CAPTURED_DETAILS_URL= os.getenv("PAYMENT_CAPTURED_DETAILS_URL")
-ADMIN_CHAT_ID = int(os.getenv('ADMIN_CHAT_ID'))
+ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+if ADMIN_CHAT_ID is not None:
+    ADMIN_CHAT_ID = int(ADMIN_CHAT_ID)
+else:
+    raise ValueError("ADMIN_CHAT_ID is not set in environment variables")
 # PRICE = int(os.getenv("PRICE"))
 
 subscription_data = {}
@@ -89,11 +93,11 @@ def generate_code(validity_days=1):
 
 def remove_expired_codes():
     codes_data = load_codes()
-    now = datetime.datetime.now()
+    now = datetime.now()
 
     updated_codes = {
         code: expiry for code, expiry in codes_data.items()
-        if datetime.datetime.strptime(expiry, "%Y-%m-%d %H:%M") > now
+        if datetime.strptime(expiry, "%Y-%m-%d %H:%M") > now
     }
 
     if len(updated_codes) != len(codes_data):
@@ -112,6 +116,7 @@ def fetch_payment_details(chat_id,payment_amount):
         # print("No payment details found! ")
     except requests.exceptions.HTTPError as err:
         print("HTTP Error:", err)
+    return None  # Return None explicitly if no match is found
 
 async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -214,11 +219,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent_message = await query.edit_message_text(f"♻️ Payment verifying. Please wait...")
         try:
             payment_details = fetch_payment_details(user_id,price)
-            print(payment_details)
+            if payment_details is None:
+                await query.message.reply_text("❌ There is an error in verifying your payment. Please contact Admin @coding_services.")
+                return
+            # print(payment_details)
             paid_amount = int(payment_details['amount'])
 
             if paid_amount==price:
-                context.job_queue.run_once(delete_message, 0, data=(sent_message.chat.id, sent_message.message_id))
+                context.job_queue.run_once(delete_message, 1, data=(sent_message.chat.id, sent_message.message_id))
                 expiry_dt = datetime.now() + timedelta(days=30)
                 user_name = payment_details['name']
                 user_email = payment_details['email']
@@ -262,14 +270,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                              f"<b>Expiry:</b> {day} at {time_str}",
                         parse_mode="HTML"
                     )
-                    context.job_queue.run_once(delete_message, 0, data=(sent_message.chat.id, sent_message.message_id))
+                    context.job_queue.run_once(delete_message, 1, data=(sent_message.chat.id, sent_message.message_id))
                 except Exception as e:
                     await query.message.reply_text("Error generating invite link. Please try again later.")
                     logger.error(f"Error creating invite link: {e}")
             else:
                 await query.message.reply_text("❌ There is an error in verifying your payment. Please contact Admin @coding_services.")
         except Exception as e:
-            context.job_queue.run_once(delete_message, 0, data=(sent_message.chat.id, sent_message.message_id))
+            context.job_queue.run_once(delete_message, 1, data=(sent_message.chat.id, sent_message.message_id))
             await query.message.reply_text("First make the payment, then click on Verify Payment button.")
             logger.error(f"Error verifying payment: {e}")
             return None
@@ -460,8 +468,8 @@ def main():
     application.add_handler(conv_handler_upload)
 
     scheduler = BackgroundScheduler(timezone="UTC")
-    scheduler.add_job(lambda: asyncio.run(check_expired_subscriptions(application)), "interval", hours=1)
-    # scheduler.add_job(lambda: asyncio.run(check_expired_subscriptions(application)), "interval", minutes=1)
+    # scheduler.add_job(lambda: asyncio.run(check_expired_subscriptions(application)), "interval", hours=1)
+    scheduler.add_job(lambda: asyncio.run(check_expired_subscriptions(application)), "interval", minutes=1)
     scheduler.start()
     application.run_polling()
 
