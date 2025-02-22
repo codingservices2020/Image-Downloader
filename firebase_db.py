@@ -36,13 +36,18 @@ db = firestore.client()
 
 def save_subscription(user_id, name, expiry, email="Unknown", mobile="Unknown"):
     """Save user subscription to Firestore with email & mobile"""
-    doc_ref = db.collection(DB_FILE_NAME).document(str(user_id))
-    doc_ref.set({
-        "name": name,
-        "expiry": expiry.strftime("%Y-%m-%d %H:%M"),
-        "email": email,  # Default: "Unknown"
-        "mobile": mobile  # Default: "Unknown"
-    })
+    try:
+        doc_ref = db.collection(DB_FILE_NAME).document(str(user_id))
+        doc_ref.set({
+            "name": name,
+            "expiry": expiry.strftime("%Y-%m-%d %H:%M"),
+            "email": email,
+            "mobile": mobile
+        })
+        print(f"✅ Subscription saved for user {user_id} until {expiry}")
+    except Exception as e:
+        print(f"❌ Failed to save subscription for {user_id}: {e}")
+
 
 
 def load_subscriptions():
@@ -52,7 +57,7 @@ def load_subscriptions():
         return {
             user.id: {
                 "name": user.to_dict().get("name", "Unknown"),
-                "expiry": datetime.strptime(user.to_dict()["expiry"], "%Y-%m-%d %H:%M"),
+                "expiry": datetime.strptime(user.to_dict().get("expiry", "9999-12-31 23:59"), "%Y-%m-%d %H:%M"),
                 "email": user.to_dict().get("email", "Unknown"),
                 "mobile": user.to_dict().get("mobile", "Unknown")
             }
@@ -63,14 +68,20 @@ def load_subscriptions():
         return {}  # Return empty dict instead of crashing
 
 
+
 def remove_expired_subscriptions():
     """Remove expired subscriptions from Firestore"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.now()
     users_ref = db.collection(DB_FILE_NAME).stream()
 
     for user in users_ref:
         data = user.to_dict()
-        if data["expiry"] < now:
+        expiry_str = data.get("expiry", "9999-12-31 23:59")
+        expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d %H:%M")
+
+        if expiry_date < now:
             db.collection(DB_FILE_NAME).document(user.id).delete()
+            print(f"Deleted expired subscription for user {user.id}")
+
 
     # remove_expired_subscriptions()
