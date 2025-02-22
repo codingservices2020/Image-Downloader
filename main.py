@@ -20,11 +20,11 @@ import json
 import random
 import string
 
-from keep_alive import keep_alive
-keep_alive()
+# from keep_alive import keep_alive
+# keep_alive()
 
-# from dotenv import load_dotenv
-# load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -350,20 +350,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([download_button])
         reply_markup = InlineKeyboardMarkup(keyboard)
         sent_message = await update.message.reply_text(
-            f"<b>🔰You are already a premium member!🔰</b>\n\n"
-            f"<b>Steps to Use:</b>\n"
+            f"*🔰You are already a premium member!🔰*\n\n"
+            f"*Steps to Use:*\n"
             f"1️⃣ Go to Shutterstock's official website: https://www.shutterstock.com , and open any image.\n"
             f"2️⃣ Below the image, you will see a share option. Click on it to copy the link.\n"
             f"3️⃣ Paste this link into the downloader and click on the Download button.\n"
             f"4️⃣ When the Get Image button appears after fetching the image, scroll down and click the Download Image button."
             if is_premium else
-            f"<b>🔰You are not a premium member!🔰</b>"
+            f"*🔰You are not a premium member!🔰*"
             f"\n\nTo use this bot, you must first purchase a subscription. Please click on the button below to make the payment."
-            f"\n\n<b>Amount:</b> Rs {price}/- (Monthly)\n"
-            f"<b>Your User ID:</b> `{user_id}`\n"
+            f"\n\n*Amount:* Rs {price}/- (Monthly)\n"
+            f"*Your User ID:* `{user_id}` \n"
             f"(Use this User ID on Razorpay Payment Gateway)",
             reply_markup=reply_markup,
-            parse_mode="HTML"
+            parse_mode="Markdown"
         )
         context.job_queue.run_once(delete_message, MSG_DELETE_TIME,
                                    data=(sent_message.chat.id, sent_message.message_id)) if is_premium else None
