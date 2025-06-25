@@ -110,7 +110,7 @@ def fetch_payment_details(chat_id,payment_amount):
         response.raise_for_status()
         data = response.json()
         for entry in data:
-            if entry['user_Id'] == chat_id:
+            if entry['user_id'] == chat_id:
                 if entry['amount'] == str(payment_amount):
                     return entry
         # print("No payment details found! ")
@@ -366,10 +366,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"4️⃣ When the Get Image button appears after fetching the image, scroll down and click the Download Image button."
             if is_premium else
             f"*🔰You are not a premium member!🔰*"
-            f"\n\nTo use this bot, you must first purchase a subscription. Please click on the button below to make the payment."
-            f"\n\n*Amount:* Rs {price}/- (Monthly)\n"
-            f"*Your User ID:* `{user_id}` \n"
-            f"(Use this User ID on Razorpay Payment Gateway)",
+            f"\n\n👁‍🗨 To use this bot, you must first purchase a subscription. Please click on the button below to make the payment."
+            f"\n\n💰*Amount:* Rs {price}/- (Monthly)\n"
+            f"🆔*Your User ID:* `{user_id}` \n"
+            f"(Use this User ID on Razorpay Payment Gateway) "
+            f"\n\n🆘*Need Help?* Contact to [Coding Services](https://t.me/coding_services)",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
