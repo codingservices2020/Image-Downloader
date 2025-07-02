@@ -126,6 +126,17 @@ async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TY
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please choose a period for this subscription code:", reply_markup=reply_markup)
 
+# ------------------ Handler: Process Code Input ------------------ #
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global subscription_code  # Access the global variable
+    query = update.callback_query
+    await query.answer()  # Acknowledge the button press
+    if query.data.startswith("generate_"):
+        days = int(query.data.split("_")[1])
+        code = generate_code(days)
+        await query.message.reply_text(f"Generated Code: `{code}` \n(Valid for {days} days)", parse_mode="Markdown")
+
+
 async def redeem_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ Start the upload process """
     await update.message.reply_text("Please enter you subscription code:")
@@ -135,20 +146,29 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     """ Receive payment amount and prompt for user ID """
     code = update.message.text
+    print(f"code: {code}")
     global codes_data
     codes_data = load_codes()
+    print(f"codes_data: {codes_data}")
     if code in codes_data:
         user_name = update.message.from_user.full_name
         expiry_dt = datetime.strptime(codes_data[code], "%Y-%m-%d %H:%M")
+        print(f"expiry_dt: {expiry_dt}")
         # Ensure expiry_dt is in the future
         expiry_timestamp = int(expiry_dt.timestamp())
+        print(f"expiry_timestamp: {expiry_timestamp}")
+        print(f"int(time.time()): {int(time.time())}")
+        print(expiry_timestamp <= int(time.time()))
         if expiry_timestamp <= int(time.time()):
             logger.error("Generated expiry date is invalid (in the past).")
             await update.message.reply_text("Error: The generated expiry date is invalid.")
             return
         day = expiry_dt.strftime("%Y-%m-%d")
+        print(f"day: {day}")
         time_str = expiry_dt.strftime("%H:%M")
+        print(f"time_str: {time_str}")
         day = expiry_dt.strftime("%Y-%m-%d %H:%M")
+        print(f"day: {day}")
 
         save_subscription(user_id=user_id, name=user_name, expiry=expiry_dt)
 
@@ -159,6 +179,7 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del codes_data[code]
         logger.error(f"Code {code} removed from codes_data.")
         save_codes()
+        print(f"load_codes(): {load_codes()}")
         try:
             # Create a chat invite link with the expiry date from the code (as a Unix timestamp)
             invite_link = await context.bot.create_chat_invite_link(
@@ -192,22 +213,10 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
-# ------------------ Handler: Process Code Input ------------------ #
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global subscription_code  # Access the global variable
-    query = update.callback_query
-    await query.answer()  # Acknowledge the button press
-    if query.data.startswith("generate_"):
-        days = int(query.data.split("_")[1])
-        code = generate_code(days)
-        await query.message.reply_text(f"Generated Code: `{code}` \n(Valid for {days} days)", parse_mode="Markdown")
-
 # ------------------ Periodic Task: Check Expired Subscriptions ------------------ #
 async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE):
-    remove_expired_subscriptions()  # Remove expired entries from Firestore
     subscription_data = load_subscriptions()  # Refresh from Firebase
     now = datetime.now()
-    expired_users = []
     for chat_id, details in list(subscription_data.items()):
         expiry_value = details["expiry"]
         if isinstance(expiry_value, str):
@@ -215,6 +224,7 @@ async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE):
         else:
             expiry_date = expiry_value
         if expiry_date < now:
+            remove_expired_subscriptions()  # Remove expired entries from Firestore
             try:
                 await context.bot.ban_chat_member(PRIVATE_CHANNEL_ID, chat_id, until_date=now)
                 await context.bot.unban_chat_member(PRIVATE_CHANNEL_ID, chat_id)
@@ -233,9 +243,6 @@ async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Removed expired user {chat_id} from the private channel.")
             except Exception as e:
                 logger.error(f"Failed to remove/unban user {chat_id}: {e}")
-            expired_users.append(chat_id)
-    for chat_id in expired_users:
-        del subscription_data[chat_id]
 
 # ------------------ Admin Command: Show Users ------------------ #
 async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
