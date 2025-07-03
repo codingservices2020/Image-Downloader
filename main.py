@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 from telegram.error import BadRequest
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 import time
 import requests
@@ -21,11 +22,11 @@ import string
 import asyncio
 import logging
 
-from keep_alive import keep_alive
-keep_alive()
+# from keep_alive import keep_alive
+# keep_alive()
 
-# from dotenv import load_dotenv
-# load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ def generate_code(validity_days=1):
     # Generate a random alphanumeric code
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     # Set expiry date
-    expiry_dt = datetime.now() + timedelta(days=validity_days)
+    expiry_dt = datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(days=validity_days)
     # Store the code with its expiry date
     codes_data[code] = expiry_dt.strftime("%Y-%m-%d %H:%M")
     # Save the updated codes back to the file
@@ -102,7 +103,7 @@ def generate_code(validity_days=1):
 
 def remove_expired_codes():
     codes_data = load_codes()
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
 
     updated_codes = {
         code: expiry for code, expiry in codes_data.items()
@@ -216,7 +217,7 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ------------------ Periodic Task: Check Expired Subscriptions ------------------ #
 async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE):
     subscription_data = load_subscriptions()  # Refresh from Firebase
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
     for chat_id, details in list(subscription_data.items()):
         expiry_value = details["expiry"]
         if isinstance(expiry_value, str):
@@ -436,7 +437,7 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"🚫 Payment not completed. Please try again.")
 
     if payment_status:
-        expiry_date = datetime.now() + timedelta(days=30)
+        expiry_date = datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(days=30)
         day = expiry_date.strftime("%Y-%m-%d")
         time_str = expiry_date.strftime("%H:%M")
         plan = user_data[chat_id]["plan"]
