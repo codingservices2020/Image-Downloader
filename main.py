@@ -12,6 +12,7 @@ from telegram.ext import (
 from telegram.error import BadRequest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from dateutil import parser
 from apscheduler.schedulers.background import BackgroundScheduler
 import time
 import requests
@@ -107,7 +108,7 @@ def remove_expired_codes():
 
     updated_codes = {
         code: expiry for code, expiry in codes_data.items()
-        if datetime.strptime(expiry, "%Y-%m-%d %H:%M") > now
+        if datetime.strptime(expiry, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Asia/Kolkata")) > now
     }
 
     if len(updated_codes) != len(codes_data):
@@ -115,17 +116,22 @@ def remove_expired_codes():
 
 
 async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id != ADMIN_CHAT_ID:
-        await update.message.reply_text("🚫 You are not authorized to use this command.")
-        return
-    keyboard = [
-        [InlineKeyboardButton("1 Day", callback_data="generate_1")],
-        [InlineKeyboardButton("1 Week", callback_data="generate_7")],
-        [InlineKeyboardButton("1 Month", callback_data="generate_30")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Please choose a period for this subscription code:", reply_markup=reply_markup)
+    try:
+        user_id = update.message.from_user.id
+        if user_id != ADMIN_CHAT_ID:
+            await update.message.reply_text("🚫 You are not authorized to use this command.")
+            return
+        keyboard = [
+            [InlineKeyboardButton("1 Day", callback_data="generate_1")],
+            [InlineKeyboardButton("1 Week", callback_data="generate_7")],
+            [InlineKeyboardButton("1 Month", callback_data="generate_30")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Please choose a period for this subscription code:", reply_markup=reply_markup)
+    except BadRequest as e:
+        logger.error(f"BadRequest Error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {type(e).__name__} - {e}")
 
 # ------------------ Handler: Process Code Input ------------------ #
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,38 +145,35 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def redeem_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ Start the upload process """
-    await update.message.reply_text("Please enter you subscription code:")
-    return WAITING_FOR_CODE
+    try:
+        """ Start the upload process """
+        await update.message.reply_text("Please enter you subscription code:")
+        return WAITING_FOR_CODE
+    except BadRequest as e:
+        logger.error(f"BadRequest Error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {type(e).__name__} - {e}")
 
 async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     """ Receive payment amount and prompt for user ID """
     code = update.message.text
-    print(f"code: {code}")
     global codes_data
     codes_data = load_codes()
-    print(f"codes_data: {codes_data}")
     if code in codes_data:
         user_name = update.message.from_user.full_name
         expiry_dt = datetime.strptime(codes_data[code], "%Y-%m-%d %H:%M")
-        print(f"expiry_dt: {expiry_dt}")
         # Ensure expiry_dt is in the future
         expiry_timestamp = int(expiry_dt.timestamp())
-        print(f"expiry_timestamp: {expiry_timestamp}")
-        print(f"int(time.time()): {int(time.time())}")
-        print(expiry_timestamp <= int(time.time()))
         if expiry_timestamp <= int(time.time()):
             logger.error("Generated expiry date is invalid (in the past).")
             await update.message.reply_text("Error: The generated expiry date is invalid.")
             return
         day = expiry_dt.strftime("%Y-%m-%d")
-        print(f"day: {day}")
         time_str = expiry_dt.strftime("%H:%M")
-        print(f"time_str: {time_str}")
         day = expiry_dt.strftime("%Y-%m-%d %H:%M")
-        print(f"day: {day}")
 
+        expiry_dt = expiry_dt.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
         save_subscription(user_id=user_id, name=user_name, expiry=expiry_dt)
 
         # Refresh subscriptions from Firestore
@@ -180,7 +183,6 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del codes_data[code]
         logger.error(f"Code {code} removed from codes_data.")
         save_codes()
-        print(f"load_codes(): {load_codes()}")
         try:
             # Create a chat invite link with the expiry date from the code (as a Unix timestamp)
             invite_link = await context.bot.create_chat_invite_link(
@@ -220,10 +222,19 @@ async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     for chat_id, details in list(subscription_data.items()):
         expiry_value = details["expiry"]
+
         if isinstance(expiry_value, str):
-            expiry_date = datetime.strptime(expiry_value, "%Y-%m-%d %H:%M:%S")
+            expiry_date = parser.parse(expiry_value)
+            if expiry_date.tzinfo is None:
+                expiry_date = expiry_date.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+            else:
+                expiry_date = expiry_date.astimezone(ZoneInfo("Asia/Kolkata"))
         else:
-            expiry_date = expiry_value
+            if expiry_value.tzinfo is None:
+                expiry_date = expiry_value.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+            else:
+                expiry_date = expiry_value.astimezone(ZoneInfo("Asia/Kolkata"))
+
         if expiry_date < now:
             remove_expired_subscriptions()  # Remove expired entries from Firestore
             try:
@@ -247,23 +258,28 @@ async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE):
 
 # ------------------ Admin Command: Show Users ------------------ #
 async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id != ADMIN_CHAT_ID:
-        await update.message.reply_text("🚫 You are not authorized to use this command!")
-        return
-    subscription_data = load_subscriptions()  # Refresh from Firebase
-    if not subscription_data:
-        await update.message.reply_text("⚠️ No active users found!")
-        return
-    user_list = "\n".join([
-        f"👤 <a href='tg://user?id={chat_id}'>{details['name']}</a> (Expiry: {details['expiry'].strftime('%Y-%m-%d %H:%M')})"
-        for chat_id, details in subscription_data.items()
-    ])
-    await update.message.reply_text(
-        f"📜 <b>Active Users:</b>\n\n{user_list}",
-        parse_mode="HTML",
-        disable_web_page_preview=True
-    )
+    try:
+        user_id = update.message.from_user.id
+        if user_id != ADMIN_CHAT_ID:
+            await update.message.reply_text("🚫 You are not authorized to use this command!")
+            return
+        subscription_data = load_subscriptions()  # Refresh from Firebase
+        if not subscription_data:
+            await update.message.reply_text("⚠️ No active users found!")
+            return
+        user_list = "\n".join([
+            f"👤 <a href='tg://user?id={chat_id}'>{details['name']}</a> (Expiry: {details['expiry'].strftime('%Y-%m-%d %H:%M')})"
+            for chat_id, details in subscription_data.items()
+        ])
+        await update.message.reply_text(
+            f"📜 <b>Active Users:</b>\n\n{user_list}",
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+    except BadRequest as e:
+        logger.error(f"BadRequest Error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {type(e).__name__} - {e}")
 
 # Modify the `start` function to schedule message deletion
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -575,7 +591,8 @@ def main():
     scheduler.add_job(
         lambda: asyncio.run(check_expired_subscriptions(application)),
         "interval",
-        minutes=1
+        # minutes=1
+        hours=1,
     )
     scheduler.start()
 
