@@ -553,8 +553,8 @@ def main():
     scheduler.add_job(
         lambda: asyncio.run(check_expired_subscriptions(application)),
         "interval",
-        minutes=1
-        # hours=1,
+        # minutes=1
+        hours=1,
     )
     scheduler.start()
 
